@@ -1,0 +1,88 @@
+services:
+  mariadb:
+    container_name: mariadb
+    build:
+      context: ./requirements/mariadb
+      dockerfile: Dockerfile
+    image: mariadb
+    env_file:
+      - .env
+
+    # volumenes para persistencia
+    volumes:
+      # datos de la DB (indices, tablas...)
+      - mariadb_data:/var/lib/mysql
+      # logs del servidor MariaDB
+      - /home/${USER}/data/mysql_log:/var/log/mysql
+
+    # Red privada entre contenedores
+    networks:
+      - inception
+
+    # se reinicia auto excepto detencion manual
+    restart: unless-stopped
+
+
+  wordpress:
+    container_name: wordpress
+    build:
+      context: ./requirements/wordpress
+      dockerfile: Dockerfile
+    image: wordpress
+
+    env_file: 
+      - .env
+    volumes: 
+      # archivos de WP (plugins...)
+      - wordpress_data:/var/www/html
+    networks: 
+      - inception
+    depends_on:
+      - mariadb
+
+    restart: unless-stopped
+
+
+  nginx:
+    container_name: nginx
+    build: 
+      context: ./requirements/nginx
+      dockerfile: Dockerfile
+    image: nginx
+    env_file: 
+      - .env
+    volumes:
+      # acceso a archivos de WP para contenido estatico
+      - wordpress_data:/var/www/html
+
+    networks:
+      - inception
+    depends_on: 
+      - wordpress
+
+    ports:
+    - "443:443"
+
+    restart: unless-stopped
+
+
+volumes:
+    wordpress_data:
+      driver: local
+      driver_opts:
+        type: none
+        o: bind
+        device: /home/${USER}/data/wordpress
+
+
+    mariadb_data:
+      driver: local
+      driver_opts:
+        type: none
+        o: bind
+        device: /home/${USER}/data/mariadb
+    
+
+networks:
+      inception:
+        driver: bridge
