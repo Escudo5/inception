@@ -1,5 +1,5 @@
 # Imagen de debian bookworm
-From debian:bookworm
+FROM debian:bookworm
 
 
 # INstalar MariaDB Server y limpiar caché de apt.
