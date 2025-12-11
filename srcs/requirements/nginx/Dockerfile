@@ -21,11 +21,11 @@ RUN openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 
 # copiar archivos de config personalizados
 
-COPY conf/enginx.conf /etc/nginx/nginx.conf
+COPY conf/nginx.conf /etc/nginx/conf/nginx.conf
 COPY conf/default.conf /etc/nginx/sites-enabled/default
 
 RUN mkdir -p var/www/html && \
-    chown -R www-data:www-data /var/www/thml && \
+    chown -R www-data:www-data /var/www/html && \
     chmod -R 755 /var/www/html
 
 EXPOSE 443
