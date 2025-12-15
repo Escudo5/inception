@@ -13,7 +13,7 @@ if [ $WAITED -ge $MAX_WAIT ]; then
 fi
 echo "Waiting for MariaDB..."
 sleep 2
-WAITED = $((WAITED + 2)) # incrementar contador
+WAITED=$((WAITED + 2)) # incrementar contador
 done
 
 echo "MariaDB is ready"

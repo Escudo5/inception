@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     php8.2-xmlrpc \
     php8.2-zip \
     curl \
+    default-mysql-client\
     mariadb-client \
     && rm -rf /var/lib/apt/lists/*
 
