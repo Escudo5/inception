@@ -1,37 +1,63 @@
-#!/bin/sh
-set -e
+#!/bin/bash
+set -euo pipefail
 
-DATADIR="/var/lib/mysql"
-RUNDIR="/run/mysqld"
-MYSQL_USER="mysql"
+# Init script robusto para MariaDB
+# - Crea/asegura /run/mysqld y /var/lib/mysql
+# - Inicializa el datadir si hace falta
+# - Arranca un mysqld temporal por socket para ejecutar la SQL de inicialización
+# - Para el servidor temporal y arranca mysqld en primer plano (exec)
+#
+# NOTA: el heredoc de SQL debe cerrar con SQL en columna 1 (sin espacios/tabs).
 
-# Asegurar runtime dir (donde se crea el socket)
+DATADIR="${DATADIR:-/var/lib/mysql}"
+RUNDIR="${RUNDIR:-/run/mysqld}"
+MYSQL_USER="${MYSQL_USER:-mysql}"
+# Variables esperadas en el entorno: MYSQL_ROOT_PASSWORD, MYSQL_DATABASE, MYSQL_USER (nombre para WP), MYSQL_PASSWORD
+
+# Asegurar directorios y permisos
 mkdir -p "$RUNDIR"
-chown -R "$MYSQL_USER":"$MYSQL_USER" "$RUNDIR"
+chown -R "$MYSQL_USER:$MYSQL_USER" "$RUNDIR"
 chmod 755 "$RUNDIR"
 
-# Comprobar si ya está inicializado (miramos la base 'mysql')
+mkdir -p "$DATADIR"
+chown -R "$MYSQL_USER:$MYSQL_USER" "$DATADIR"
+chmod 700 "$DATADIR"
+
+# Función para matar servidor temporal en caso de salida prematura
+_tmp_pid_cleanup() {
+  if [ -n "${MYSQLD_TMP_PID:-}" ]; then
+    kill "${MYSQLD_TMP_PID}" 2>/dev/null || true
+    wait "${MYSQLD_TMP_PID}" 2>/dev/null || true
+  fi
+}
+trap _tmp_pid_cleanup EXIT
+
+# Detectar si ya está inicializado (miramos la base 'mysql')
 if [ ! -d "$DATADIR/mysql" ] || [ -z "$(ls -A "$DATADIR" 2>/dev/null)" ]; then
   echo "Initializing MariaDB data directory..."
 
-  # Inicializar de forma segura
-  if mysqld --help 2>/dev/null | grep -q initialize; then
+  # Inicializar de forma adecuada según disponibilidad de opciones
+  if mysqld --help 2>/dev/null | grep -qi 'initialize'; then
+    echo "Using mysqld --initialize-insecure"
     mysqld --initialize-insecure --user="$MYSQL_USER" --datadir="$DATADIR"
   else
+    echo "Using mysql_install_db fallback"
     mysql_install_db --user="$MYSQL_USER" --datadir="$DATADIR" || true
   fi
 
-  echo "Starting temporary mysqld for initial configuration..."
-  mysqld --user="$MYSQL_USER" --skip-networking --socket="$RUNDIR/mysql_init.sock" --datadir="$DATADIR" &
+  # Iniciar servidor temporal (solo socket) para crear usuarios y DB
+  SOCKET_INIT="$RUNDIR/mysql_init.sock"
+  echo "Starting temporary mysqld (socket=$SOCKET_INIT)..."
+  mysqld --user="$MYSQL_USER" --skip-networking --socket="$SOCKET_INIT" --datadir="$DATADIR" &
   MYSQLD_TMP_PID=$!
 
-  # Esperar a que acepte conexiones por socket
+  # Esperar hasta 60s a que acepte conexiones por socket
   i=0
-  until mysql --socket="$RUNDIR/mysql_init.sock" -e "SELECT 1" >/dev/null 2>&1; do
+  until mysql --socket="$SOCKET_INIT" -e "SELECT 1" >/dev/null 2>&1; do
     i=$((i+1))
     if [ "$i" -ge 60 ]; then
       echo "ERROR: temporary mysqld did not start within 60s" >&2
-      kill "$MYSQLD_TMP_PID" 2>/dev/null || true
+      _tmp_pid_cleanup
       exit 1
     fi
     echo "Waiting for temporary mysqld to be ready... ($i)"
@@ -39,33 +65,37 @@ if [ ! -d "$DATADIR/mysql" ] || [ -z "$(ls -A "$DATADIR" 2>/dev/null)" ]; then
   done
 
   echo "Running initial SQL..."
-  mysql --socket="$RUNDIR/mysql_init.sock" <<-SQL
-    $( [ -n "$MYSQL_ROOT_PASSWORD" ] && echo "ALTER USER 'root'@'localhost' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}';" )
-    DELETE FROM mysql.user WHERE User='';
-    DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost','127.0.0.1','::1');
-    DROP DATABASE IF EXISTS test;
-    DELETE FROM mysql.db WHERE Db='test' OR Db LIKE 'test\\_%';
-    CREATE DATABASE IF NOT EXISTS \`${MYSQL_DATABASE:-wordpress}\`;
-    CREATE USER IF NOT EXISTS '${MYSQL_USER:-wp_user}'@'%' IDENTIFIED BY '${MYSQL_PASSWORD:-password}';
-    GRANT ALL PRIVILEGES ON \`${MYSQL_DATABASE:-wordpress}\`.* TO '${MYSQL_USER:-wp_user}'@'%';
-    FLUSH PRIVILEGES;
-  SQL
+  mysql --socket="$SOCKET_INIT" <<SQL
+-- Cambiar contraseña root si se pasó MYSQL_ROOT_PASSWORD
+$( [ -n "${MYSQL_ROOT_PASSWORD:-}" ] && echo "ALTER USER 'root'@'localhost' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}';" )
+
+DELETE FROM mysql.user WHERE User='';
+DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost','127.0.0.1','::1');
+DROP DATABASE IF EXISTS test;
+DELETE FROM mysql.db WHERE Db='test' OR Db LIKE 'test\\_%';
+
+CREATE DATABASE IF NOT EXISTS \`${MYSQL_DATABASE:-wordpress}\`;
+CREATE USER IF NOT EXISTS '${MYSQL_USER:-wp_user}'@'%' IDENTIFIED BY '${MYSQL_PASSWORD:-password}';
+GRANT ALL PRIVILEGES ON \`${MYSQL_DATABASE:-wordpress}\`.* TO '${MYSQL_USER:-wp_user}'@'%';
+FLUSH PRIVILEGES;
+SQL
 
   echo "Stopping temporary mysqld..."
   kill "$MYSQLD_TMP_PID"
   wait "$MYSQLD_TMP_PID" 2>/dev/null || true
+
+  unset MYSQLD_TMP_PID
+  trap - EXIT
 
   echo "MariaDB initialized"
 else
   echo "MariaDB already initialized"
 fi
 
-# Asegurar permisos de datos
-chown -R "$MYSQL_USER":"$MYSQL_USER" "$DATADIR"
-
-# Asegurar runtime dir y permisos otra vez por si acaso
+# Asegurar permisos finales
+chown -R "$MYSQL_USER:$MYSQL_USER" "$DATADIR"
 mkdir -p "$RUNDIR"
-chown -R "$MYSQL_USER":"$MYSQL_USER" "$RUNDIR"
+chown -R "$MYSQL_USER:$MYSQL_USER" "$RUNDIR"
 chmod 755 "$RUNDIR"
 
 # Ejecutar el servidor en primer plano (PID 1)
