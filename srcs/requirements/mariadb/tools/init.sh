@@ -1,63 +1,73 @@
-#!/bin/bash
+#!/bin/sh
+set -e
 
+DATADIR="/var/lib/mysql"
+RUNDIR="/run/mysqld"
+MYSQL_USER="mysql"
 
-# Script para configurar MariaDB la primera vez.
-# Si ya esta configurado inicia el servidor
+# Asegurar runtime dir (donde se crea el socket)
+mkdir -p "$RUNDIR"
+chown -R "$MYSQL_USER":"$MYSQL_USER" "$RUNDIR"
+chmod 755 "$RUNDIR"
 
-if [ ! -d "/var/lib/mysql/$MYSQL_DATABASE" ]; then
-    echo "Initializing MariaDB..."
+# Comprobar si ya está inicializado (miramos la base 'mysql')
+if [ ! -d "$DATADIR/mysql" ] || [ -z "$(ls -A "$DATADIR" 2>/dev/null)" ]; then
+  echo "Initializing MariaDB data directory..."
 
-    # Crear las tablas del sistema de MariaDB
-    mysql_install_db --user=mysql --datadir=/var/lib/mysql
+  # Inicializar de forma segura
+  if mysqld --help 2>/dev/null | grep -q initialize; then
+    mysqld --initialize-insecure --user="$MYSQL_USER" --datadir="$DATADIR"
+  else
+    mysql_install_db --user="$MYSQL_USER" --datadir="$DATADIR" || true
+  fi
 
-    # Iniciar MariaDB en modo temporal (sin red, solo socket local)
-    mysqld --user=mysql --skip-networking --socket=/tmp/mysql_init.sock &
-    MYSQL_PID=$!
+  echo "Starting temporary mysqld for initial configuration..."
+  mysqld --user="$MYSQL_USER" --skip-networking --socket="$RUNDIR/mysql_init.sock" --datadir="$DATADIR" &
+  MYSQLD_TMP_PID=$!
 
-    # Esperar a que MariaDB esté lista para recibir comandos
-    for i in {1..30}; do
-        if mysql --socket=/tmp/mysql_init.sock -e "SELECT 1" &>/dev/null; then
-            break
-        fi
-        echo "Waiting for MySQL to start..."
-        sleep 1
-    done
+  # Esperar a que acepte conexiones por socket
+  i=0
+  until mysql --socket="$RUNDIR/mysql_init.sock" -e "SELECT 1" >/dev/null 2>&1; do
+    i=$((i+1))
+    if [ "$i" -ge 60 ]; then
+      echo "ERROR: temporary mysqld did not start within 60s" >&2
+      kill "$MYSQLD_TMP_PID" 2>/dev/null || true
+      exit 1
+    fi
+    echo "Waiting for temporary mysqld to be ready... ($i)"
+    sleep 1
+  done
 
-# Configuracion inicial y crear DB.
-    mysql --socket=/tmp/mysql_init.sock -u root << EOF
+  echo "Running initial SQL..."
+  mysql --socket="$RUNDIR/mysql_init.sock" <<-SQL
+    $( [ -n "$MYSQL_ROOT_PASSWORD" ] && echo "ALTER USER 'root'@'localhost' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}';" )
+    DELETE FROM mysql.user WHERE User='';
+    DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost','127.0.0.1','::1');
+    DROP DATABASE IF EXISTS test;
+    DELETE FROM mysql.db WHERE Db='test' OR Db LIKE 'test\\_%';
+    CREATE DATABASE IF NOT EXISTS \`${MYSQL_DATABASE:-wordpress}\`;
+    CREATE USER IF NOT EXISTS '${MYSQL_USER:-wp_user}'@'%' IDENTIFIED BY '${MYSQL_PASSWORD:-password}';
+    GRANT ALL PRIVILEGES ON \`${MYSQL_DATABASE:-wordpress}\`.* TO '${MYSQL_USER:-wp_user}'@'%';
+    FLUSH PRIVILEGES;
+  SQL
 
+  echo "Stopping temporary mysqld..."
+  kill "$MYSQLD_TMP_PID"
+  wait "$MYSQLD_TMP_PID" 2>/dev/null || true
 
--- Luego cambiar contraseña
-ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASSWORD';
-
--- Eliminar usuarios anónimos (seguridad)
-DELETE FROM mysql.user WHERE User='';
-
--- Eliminar accesos remotos de root (seguridad)
-DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
-
--- Eliminar base de datos de prueba
-DROP DATABASE IF EXISTS test;
-DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';
-
--- Crear base de datos para WordPress
-CREATE DATABASE IF NOT EXISTS $MYSQL_DATABASE;
-
--- Crear usuario para WordPress con acceso desde cualquier host
-CREATE USER IF NOT EXISTS '$MYSQL_USER'@'%' IDENTIFIED BY '$MYSQL_PASSWORD';
-
--- Dar todos los permisos sobre la BD de WordPress
-GRANT ALL PRIVILEGES ON $MYSQL_DATABASE.* TO '$MYSQL_USER'@'%';
-
-FLUSH PRIVILEGES;
-EOF
-
-    kill $MYSQL_PID
-    wait $MYSQL_PID
-
-    echo "MariaDB initialized"
+  echo "MariaDB initialized"
 else
-    echo "MariaDB arleady initilized"
+  echo "MariaDB already initialized"
 fi
 
-exec mysql --user=mysql
+# Asegurar permisos de datos
+chown -R "$MYSQL_USER":"$MYSQL_USER" "$DATADIR"
+
+# Asegurar runtime dir y permisos otra vez por si acaso
+mkdir -p "$RUNDIR"
+chown -R "$MYSQL_USER":"$MYSQL_USER" "$RUNDIR"
+chmod 755 "$RUNDIR"
+
+# Ejecutar el servidor en primer plano (PID 1)
+echo "Executing mysqld (foreground)..."
+exec mysqld --user="$MYSQL_USER" --console
