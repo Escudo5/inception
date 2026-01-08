@@ -4,7 +4,7 @@ services:
     build:
       context: ./requirements/mariadb
       dockerfile: Dockerfile
-    image: mariadb
+    image: mariadb:inception
     env_file:
       - .env
 
@@ -28,7 +28,7 @@ services:
     build:
       context: ./requirements/wordpress
       dockerfile: Dockerfile
-    image: wordpress
+    image: wordpress:inception
 
     env_file: 
       - .env
@@ -48,7 +48,7 @@ services:
     build: 
       context: ./requirements/nginx
       dockerfile: Dockerfile
-    image: nginx
+    image: nginx:inception
     env_file: 
       - .env
     volumes:

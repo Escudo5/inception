@@ -1,5 +1,9 @@
-.env
-*.env
-.env.*
-
+# Environment files - El .env real está ignorado
+# Subir solo .env.example con valores de plantilla
 srcs/.env
+
+# Ignorar archivos temporales y logs
+*.log
+*.tmp
+*~
+.DS_Store

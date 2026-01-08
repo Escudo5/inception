@@ -5,11 +5,13 @@ FROM debian:bookworm
 # INstalar MariaDB Server y limpiar caché de apt.
 RUN apt-get update && apt-get install -y \
     mariadb-server \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /var/lib/mysql/*
 
 
 # COnfiguracion del servidor
-COPY conf/50-server.conf /etc/mysql/mariadb.conf.d/50-server.conf
+# IMPORTANTE: Copiar como .cnf para que MariaDB lo incluya
+COPY conf/50-server.cnf /etc/mysql/mariadb.conf.d/50-server.cnf
 
 # Copiar script de inicializacion  y hacerlo ejecutable
 COPY tools/init.sh /usr/local/bin/init.sh

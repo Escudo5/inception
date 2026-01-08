@@ -30,11 +30,12 @@ RUN mkdir -p /run/php && \
 # Establecer directorio de trabajo
 WORKDIR /var/www/html
 
-# copiar script inicializacion y hacerlo ejecutable
+# copiar scripts de inicializacion y hacerlos ejecutables
+COPY tools/make_dir.sh /usr/local/bin/make_dir.sh
 COPY tools/setup.sh /usr/local/bin/setup.sh
-RUN chmod +x /usr/local/bin/setup.sh
+RUN chmod +x /usr/local/bin/make_dir.sh /usr/local/bin/setup.sh
 
 EXPOSE 9000
 
-# Ejecutar script de setup al iniciar contenedor
-CMD ["/usr/local/bin/setup.sh"]
+# Ejecutar scripts de setup al iniciar contenedor
+CMD ["/bin/bash", "-c", "/usr/local/bin/make_dir.sh && /usr/local/bin/setup.sh"]

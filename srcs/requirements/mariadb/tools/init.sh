@@ -11,16 +11,18 @@ set -euo pipefail
 
 DATADIR="${DATADIR:-/var/lib/mysql}"
 RUNDIR="${RUNDIR:-/run/mysqld}"
+# Usuario de sistema con el que corre mysqld (no confundir con el usuario de aplicación/WP)
+MYSQL_SYSTEM_USER="${MYSQL_SYSTEM_USER:-mysql}"
 MYSQL_USER="${MYSQL_USER:-mysql}"
 # Variables esperadas en el entorno: MYSQL_ROOT_PASSWORD, MYSQL_DATABASE, MYSQL_USER (nombre para WP), MYSQL_PASSWORD
 
 # Asegurar directorios y permisos
 mkdir -p "$RUNDIR"
-chown -R "$MYSQL_USER:$MYSQL_USER" "$RUNDIR"
+chown -R "$MYSQL_SYSTEM_USER:$MYSQL_SYSTEM_USER" "$RUNDIR"
 chmod 755 "$RUNDIR"
 
 mkdir -p "$DATADIR"
-chown -R "$MYSQL_USER:$MYSQL_USER" "$DATADIR"
+chown -R "$MYSQL_SYSTEM_USER:$MYSQL_SYSTEM_USER" "$DATADIR"
 chmod 700 "$DATADIR"
 
 # Función para matar servidor temporal en caso de salida prematura
@@ -39,16 +41,16 @@ if [ ! -d "$DATADIR/mysql" ] || [ -z "$(ls -A "$DATADIR" 2>/dev/null)" ]; then
   # Inicializar de forma adecuada según disponibilidad de opciones
   if mysqld --help 2>/dev/null | grep -qi 'initialize'; then
     echo "Using mysqld --initialize-insecure"
-    mysqld --initialize-insecure --user="$MYSQL_USER" --datadir="$DATADIR"
+    mysqld --initialize-insecure --user="$MYSQL_SYSTEM_USER" --datadir="$DATADIR"
   else
     echo "Using mysql_install_db fallback"
-    mysql_install_db --user="$MYSQL_USER" --datadir="$DATADIR" || true
+    mysql_install_db --user="$MYSQL_SYSTEM_USER" --datadir="$DATADIR" || true
   fi
 
   # Iniciar servidor temporal (solo socket) para crear usuarios y DB
   SOCKET_INIT="$RUNDIR/mysql_init.sock"
   echo "Starting temporary mysqld (socket=$SOCKET_INIT)..."
-  mysqld --user="$MYSQL_USER" --skip-networking --socket="$SOCKET_INIT" --datadir="$DATADIR" &
+  mysqld --user="$MYSQL_SYSTEM_USER" --skip-networking --socket="$SOCKET_INIT" --datadir="$DATADIR" &
   MYSQLD_TMP_PID=$!
 
   # Esperar hasta 60s a que acepte conexiones por socket
@@ -77,6 +79,11 @@ DELETE FROM mysql.db WHERE Db='test' OR Db LIKE 'test\\_%';
 CREATE DATABASE IF NOT EXISTS \`${MYSQL_DATABASE:-wordpress}\`;
 CREATE USER IF NOT EXISTS '${MYSQL_USER:-wp_user}'@'%' IDENTIFIED BY '${MYSQL_PASSWORD:-password}';
 GRANT ALL PRIVILEGES ON \`${MYSQL_DATABASE:-wordpress}\`.* TO '${MYSQL_USER:-wp_user}'@'%';
+
+-- Test connection from WordPress
+SELECT User, Host FROM mysql.user WHERE User='${MYSQL_USER:-wp_user}';
+SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME='${MYSQL_DATABASE:-wordpress}';
+
 FLUSH PRIVILEGES;
 SQL
 
@@ -93,11 +100,11 @@ else
 fi
 
 # Asegurar permisos finales
-chown -R "$MYSQL_USER:$MYSQL_USER" "$DATADIR"
+chown -R "$MYSQL_SYSTEM_USER:$MYSQL_SYSTEM_USER" "$DATADIR"
 mkdir -p "$RUNDIR"
-chown -R "$MYSQL_USER:$MYSQL_USER" "$RUNDIR"
+chown -R "$MYSQL_SYSTEM_USER:$MYSQL_SYSTEM_USER" "$RUNDIR"
 chmod 755 "$RUNDIR"
 
 # Ejecutar el servidor en primer plano (PID 1)
 echo "Executing mysqld (foreground)..."
-exec mysqld --user="$MYSQL_USER" --console
+exec mysqld --user="$MYSQL_SYSTEM_USER" --console
