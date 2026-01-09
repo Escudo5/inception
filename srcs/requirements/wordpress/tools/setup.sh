@@ -1,19 +1,27 @@
 #!/bin/bash
 
-MAX_WAIT=120
+MAX_WAIT=180
 WAITED=0
 
+# Debug: mostrar las credenciales que vamos a usar
+echo "Intentando conectar con:"
+echo "  Host: mariadb"
+echo "  Usuario: $MYSQL_USER"
+echo "  Base de datos: $MYSQL_DATABASE"
+echo "  Contraseña: (oculta, primeros 3 caracteres: ${MYSQL_PASSWORD:0:3}***)"
+echo ""
 
 # Esperar a que MariaDB esté lista y acepte conexiones
-
-until MYSQL_PWD="$MYSQL_PASSWORD" mysql -h mariadb -u"$MYSQL_USER" -e "SELECT 1" &>/dev/null; do
+until MYSQL_PWD="$MYSQL_PASSWORD" timeout 5 mysql -h mariadb -u"$MYSQL_USER" -e "SELECT 1" >/dev/null 2>&1; do
 if [ $WAITED -ge $MAX_WAIT ]; then
 	echo "ERROR: MariaDB not ready after $MAX_WAIT seconds" >&2
+	echo "Intenté conectar con: mysql -h mariadb -u $MYSQL_USER -p***" >&2
+	echo "Si la contraseña es incorrecta, MariaDB rechazará la conexión." >&2
 	exit 1
 fi
-echo "Waiting for MariaDB..."
-sleep 2
-WAITED=$((WAITED + 2)) # incrementar contador
+echo "Waiting for MariaDB... ($WAITED/$MAX_WAIT seconds)"
+sleep 3
+WAITED=$((WAITED + 3))
 done
 
 echo "MariaDB is ready"

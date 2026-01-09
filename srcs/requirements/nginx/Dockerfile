@@ -24,9 +24,11 @@ RUN openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 COPY conf/nginx.conf /etc/nginx/conf/nginx.conf
 COPY conf/default.conf /etc/nginx/sites-enabled/default
 
-RUN mkdir -p var/www/html && \
-    chown -R www-data:www-data /var/www/html && \
-    chmod -R 755 /var/www/html
+RUN mkdir -p /var/www/html && \
+    chown -R www-data:www-data /var/www && \
+    chmod -R 755 /var/www && \
+    chmod -R 755 /var/www/html && \
+    echo "<?php phpinfo(); ?>" > /var/www/html/index.php
 
 EXPOSE 443
 

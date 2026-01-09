@@ -25,7 +25,10 @@ RUN chmod +x /usr/local/bin/init.sh
 RUN mkdir -p /var/run/mysqld /var/log/mysql && \
     chown -R mysql:mysql /var/run/mysqld /var/log/mysql /var/lib/mysql && \
     chmod 755 /var/log/mysql && \
-    chmod 777 /var/run/mysqld
+    chmod 777 /var/run/mysqld && \
+    touch /var/log/mysql/error.log && \
+    chown mysql:mysql /var/log/mysql/error.log && \
+    chmod 644 /var/log/mysql/error.log
 
 
 # Expoenr puerto 3306 (puerto de MySQL y MariaDB)
