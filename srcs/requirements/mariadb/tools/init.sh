@@ -35,6 +35,17 @@ _tmp_pid_cleanup() {
 trap _tmp_pid_cleanup EXIT
 
 # Detectar si ya está inicializado (miramos la base 'mysql')
+echo "DEBUG: Checking if DATADIR='$DATADIR' exists..."
+ls -la "$DATADIR" 2>&1 | head -10
+echo "DEBUG: Checking if $DATADIR/mysql exists..."
+[ -d "$DATADIR/mysql" ] && echo "  DIR EXISTS" || echo "  DIR MISSING"
+echo "DEBUG: Checking if $DATADIR is empty..."
+if [ -z "$(ls -A "$DATADIR" 2>/dev/null)" ]; then
+  echo "  DATADIR IS EMPTY"
+else
+  echo "  DATADIR IS NOT EMPTY"
+fi
+
 if [ ! -d "$DATADIR/mysql" ] || [ -z "$(ls -A "$DATADIR" 2>/dev/null)" ]; then
   echo "Initializing MariaDB data directory..."
 
@@ -96,7 +107,64 @@ SQL
 
   echo "MariaDB initialized"
 else
-  echo "MariaDB already initialized"
+  echo "MariaDB already initialized - Resetting credentials with skip-grant-tables..."
+
+  # Reiniciar con skip-grant-tables para actualizar credenciales incluso si no coinciden
+  SOCKET_INIT="$RUNDIR/mysql_init.sock"
+  echo "Starting temporary mysqld with skip-grant-tables (socket=$SOCKET_INIT)..."
+  mysqld --user="$MYSQL_SYSTEM_USER" --skip-networking --skip-grant-tables --socket="$SOCKET_INIT" --datadir="$DATADIR" &
+  MYSQLD_TMP_PID=$!
+
+  i=0
+  until mysql --protocol=socket --socket="$SOCKET_INIT" -e "SELECT 1" >/dev/null 2>&1; do
+    i=$((i+1))
+    if [ "$i" -ge 30 ]; then
+      echo "ERROR: temporary mysqld (skip-grant-tables) did not start within 30s" >&2
+      _tmp_pid_cleanup
+      exit 1
+    fi
+    echo "Waiting for temporary mysqld to be ready... ($i)"
+    sleep 1
+  done
+
+  echo "Running credential reset SQL..."
+  mysql --protocol=socket --socket="$SOCKET_INIT" <<SQL
+FLUSH PRIVILEGES;
+
+-- Resetear credenciales de root (solo si existen)
+ALTER USER IF EXISTS 'root'@'localhost' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD:-change_this_root_password}';
+
+-- Eliminar usuario antiguo de wp_user
+DROP USER IF EXISTS '${MYSQL_USER:-wp_user}'@'%';
+DROP USER IF EXISTS '${MYSQL_USER:-wp_user}'@'localhost';
+
+-- Crear usuario nuevo con credenciales correctas desde cualquier host
+CREATE USER '${MYSQL_USER:-wp_user}'@'%' IDENTIFIED BY '${MYSQL_PASSWORD:-change_this_wp_password}';
+
+-- Crear base de datos
+CREATE DATABASE IF NOT EXISTS \`${MYSQL_DATABASE:-wordpress}\`;
+
+-- Dar todos los permisos
+GRANT ALL PRIVILEGES ON \`${MYSQL_DATABASE:-wordpress}\`.* TO '${MYSQL_USER:-wp_user}'@'%';
+
+-- Flush para aplicar cambios
+FLUSH PRIVILEGES;
+
+-- Verificación
+SELECT '=== USUARIOS CREADOS ===' as info;
+SELECT User, Host FROM mysql.user WHERE User IN ('root', '${MYSQL_USER:-wp_user}');
+SELECT '=== BASE DE DATOS ===' as info;
+SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME='${MYSQL_DATABASE:-wordpress}';
+SQL
+
+  echo "Stopping temporary mysqld..."
+  kill "$MYSQLD_TMP_PID"
+  wait "$MYSQLD_TMP_PID" 2>/dev/null || true
+
+  unset MYSQLD_TMP_PID
+  trap - EXIT
+
+  echo "Credentials reset complete"
 fi
 
 # Asegurar permisos finales

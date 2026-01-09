@@ -5,6 +5,7 @@ FROM debian:bookworm
 # INstalar MariaDB Server y limpiar caché de apt.
 RUN apt-get update && apt-get install -y \
     mariadb-server \
+    mariadb-client \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf /var/lib/mysql/*
 
