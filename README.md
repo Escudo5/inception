@@ -128,10 +128,8 @@ Bind mounts map host directories directly into containers, making them easier to
 
 AI assistance was utilized for:
 - **Dockerfile optimization:** Understanding base images, layer caching, and best practices for minimal image sizes
-- **NGINX configuration:** Creating secure TLS configurations and proper reverse proxy setup
 - **PHP-FPM configuration:** Understanding process management and socket communication
 - **Docker Compose syntax:** Verifying proper network and volume declarations
-- **Shell scripting:** Creating robust initialization and setup scripts
 - **Documentation:** Structuring clear, comprehensive documentation
 
 All code has been reviewed, tested, and modified to match project requirements and security standards.
