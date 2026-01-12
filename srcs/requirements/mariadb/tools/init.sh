@@ -6,8 +6,7 @@ set -euo pipefail
 # - Inicializa el datadir si hace falta
 # - Arranca un mysqld temporal por socket para ejecutar la SQL de inicialización
 # - Para el servidor temporal y arranca mysqld en primer plano (exec)
-#
-# NOTA: el heredoc de SQL debe cerrar con SQL en columna 1 (sin espacios/tabs).
+
 
 DATADIR="${DATADIR:-/var/lib/mysql}"
 RUNDIR="${RUNDIR:-/run/mysqld}"
