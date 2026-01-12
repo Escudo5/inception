@@ -63,7 +63,7 @@ services:
 
     ports:
       - "443:443"
-
+      - "80:80" #esta el 80 para probar http.
     restart: unless-stopped
 
 
