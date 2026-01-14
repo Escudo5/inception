@@ -33,9 +33,10 @@ WORKDIR /var/www/html
 # copiar scripts de inicializacion y hacerlos ejecutables
 COPY tools/make_dir.sh /usr/local/bin/make_dir.sh
 COPY tools/setup.sh /usr/local/bin/setup.sh
-RUN chmod +x /usr/local/bin/make_dir.sh /usr/local/bin/setup.sh
+COPY tools/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/make_dir.sh /usr/local/bin/setup.sh /usr/local/bin/entrypoint.sh
 
 EXPOSE 9000
 
 # Ejecutar scripts de setup al iniciar contenedor
-CMD ["/bin/bash", "-c", "/usr/local/bin/make_dir.sh && /usr/local/bin/setup.sh"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

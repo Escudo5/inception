@@ -17,7 +17,7 @@ if [ $WAITED -ge $MAX_WAIT ]; then
 	echo "ERROR: MariaDB not ready after $MAX_WAIT seconds" >&2
 	echo "Intenté conectar con: mysql -h mariadb -u $MYSQL_USER -p***" >&2
 	echo "Si la contraseña es incorrecta, MariaDB rechazará la conexión." >&2
-	exit 1
+	break
 fi
 echo "Waiting for MariaDB... ($WAITED/$MAX_WAIT seconds)"
 sleep 3
